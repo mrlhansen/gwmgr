@@ -4,38 +4,46 @@ import (
 	"log"
 	"fmt"
 	"net"
+	"time"
 	"regexp"
 	"strings"
 	"strconv"
-	"encoding/json"
 	"encoding/binary"
 )
 
-type DiscoverMessage struct {
-	WebAddress  string `json:"webAddress"`
-	ClusterToken string `json:"clusterToken"`
+func writeDiscoverMessage() []byte {
+	msg := fmt.Sprintf("v1|%s|%s|%s", web_listen, cluster_token, local_uuid)
+	return []byte(msg)
 }
 
-func writeDiscoverMessage() []byte {
-	message := &DiscoverMessage{
-		WebAddress: webListen,
-		ClusterToken: "hej",
+func readDiscoverMessage(addr string, msg []byte) {
+	var web string
+	var token string
+	var uuid string
+
+	list := strings.Split(string(msg), "|")
+	if len(list) != 4 {
+		return
 	}
 
-	data, _ := json.Marshal(message)
-	return data
-}
+	web = list[1]
+	token = list[2]
+	uuid = list[3]
 
-func readDiscoverMessage(addr string, data []byte) {
-	var msg DiscoverMessage
-	json.Unmarshal(data, &msg)
+	if token != cluster_token {
+		return
+	}
 
-	host,port,_ := net.SplitHostPort(msg.WebAddress)
+	if uuid == local_uuid {
+		// return
+	}
+
+	host,port,_ := net.SplitHostPort(web)
 	if host == "" || host == "0.0.0.0" {
 		host,_,_ = net.SplitHostPort(addr)
 	}
 
-	log.Println(host,port)
+	clusterRegisterWithPeer(host + ":" + port)
 }
 
 func calcBroadcast(ip string) string {
@@ -83,15 +91,16 @@ func calcBroadcast(ip string) string {
 }
 
 func discoverServer() {
-	host,port,err := net.SplitHostPort(clusterListen)
+	host,port,err := net.SplitHostPort(cluster_listen)
 	if err != nil {
 		log.Fatal(err)
 	}
 	brd := calcBroadcast(host) + ":" + port
+	host =  ":" + port
 
-
-	log.Printf("starting discovery server on %s", clusterListen)
-	pc,err := net.ListenPacket("udp4", clusterListen)
+	// we need to listen to all addresses to also received broadcast messages
+	log.Printf("starting discovery server on %s", host)
+	pc,err := net.ListenPacket("udp4", host)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -123,5 +132,6 @@ func discoverServer() {
 }
 
 func discoverStart() {
+	time.Sleep(time.Second)
 	discoverServer()
 }
